@@ -12,6 +12,7 @@ env:
   GAR_LOCATION: asia-east1-docker.pkg.dev
   PROJECT_ID: rs-0123
   GAR_REPO: kyoskdemo
+  DEPLOYMENT_FILE: release/kubernetes-manifests/all-deployments.yaml
 
 jobs:
   build-push-update:
@@ -54,23 +55,30 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          docker build -t $GAR_LOCATION/$PROJECT_ID/$GAR_REPO/${{ matrix.service }}:${{ steps.vars.outputs.sha_short }} ./src/${{ matrix.service }}
-          docker push $GAR_LOCATION/$PROJECT_ID/$GAR_REPO/${{ matrix.service }}:${{ steps.vars.outputs.sha_short }}
+          SERVICE=${{ matrix.service }}
+          docker build -t $GAR_LOCATION/$PROJECT_ID/$GAR_REPO/$SERVICE:${{ steps.vars.outputs.sha_short }} ./src/$SERVICE
+          docker push $GAR_LOCATION/$PROJECT_ID/$GAR_REPO/$SERVICE:${{ steps.vars.outputs.sha_short }}
 
-      - name: Update deployment.yaml for ${{ matrix.service }}
+      - name: Update image in shared deployment YAML
         run: |
-          FILE="release/kubernetes-manifests/${{ matrix.service }}-deployment.yaml"
-          if [[ -f "$FILE" ]]; then
-            sed -i "s|image: .*${{ matrix.service }}:.*|image: $GAR_LOCATION/$PROJECT_ID/$GAR_REPO/${{ matrix.service }}:${{ steps.vars.outputs.sha_short }}|" "$FILE"
+          SERVICE=${{ matrix.service }}
+          IMAGE="$GAR_LOCATION/$PROJECT_ID/$GAR_REPO/$SERVICE:${{ steps.vars.outputs.sha_short }}"
+          FILE=${{ env.DEPLOYMENT_FILE }}
+
+          if grep -q "$SERVICE" "$FILE"; then
+            echo "Updating image for $SERVICE..."
+            sed -i "s|image: .*${SERVICE}:.*|image: $IMAGE|" "$FILE"
           else
-            echo "No deployment file for ${{ matrix.service }}, skipping update"
+            echo "No image line for $SERVICE found in $FILE — skipping"
           fi
 
-      - name: Commit updated deployment.yaml
+      - name: Commit updated deployment file
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add release/kubernetes-manifests/${{ matrix.service }}-deployment.yaml || true
-          git commit -m "Update ${{ matrix.service }} image tag to ${{ steps.vars.outputs.sha_short }}" || echo "No changes to commit"
-          git push || echo "Nothing to push"
 
+          git add ${{ env.DEPLOYMENT_FILE }} || true
+          git diff --cached --quiet && echo "No changes to commit" || (
+            git commit -m "Update image for ${{ matrix.service }} to ${{ steps.vars.outputs.sha_short }}"
+            git push
+          )
