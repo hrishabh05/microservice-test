@@ -12,7 +12,7 @@ env:
   GAR_LOCATION: asia-east1-docker.pkg.dev
   PROJECT_ID: rs-0123
   GAR_REPO: kyoskdemo
-  DEPLOYMENT_FILE: release/kubernetes-manifests/kubernetes-manifests.yaml
+  DEPLOYMENT_FILE: release/kubernetes-manifests.yaml
 
 jobs:
   build-push-update:
