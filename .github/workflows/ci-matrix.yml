@@ -20,7 +20,6 @@ jobs:
       matrix:
         service:
           - adservice
-          - cartservice
           - checkoutservice
           - currencyservice
           - emailservice
