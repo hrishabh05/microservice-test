@@ -1,0 +1,77 @@
+name: CI - Build All Services and Update Deployment
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+env:
+  GAR_LOCATION: asia-east1-docker.pkg.dev
+  PROJECT_ID: rs-0123
+  GAR_REPO: kyoskdemo
+
+jobs:
+  build-push-update:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - adservice
+          - cartservice
+          - checkoutservice
+          - currencyservice
+          - emailservice
+          - frontend
+          - loadgenerator
+          - paymentservice
+          - productcatalogservice
+          - recommendationservice
+          - shippingservice
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Configure Docker for GAR
+        run: |
+          gcloud auth configure-docker ${{ env.GAR_LOCATION }}
+
+      - name: Get short SHA
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        run: |
+          docker build -t $GAR_LOCATION/$PROJECT_ID/$GAR_REPO/${{ matrix.service }}:${{ steps.vars.outputs.sha_short }} ./src/${{ matrix.service }}
+          docker push $GAR_LOCATION/$PROJECT_ID/$GAR_REPO/${{ matrix.service }}:${{ steps.vars.outputs.sha_short }}
+
+      - name: Update deployment.yaml for ${{ matrix.service }}
+        run: |
+          FILE="release/kubernetes-manifests/${{ matrix.service }}-deployment.yaml"
+          if [[ -f "$FILE" ]]; then
+            sed -i "s|image: .*${{ matrix.service }}:.*|image: $GAR_LOCATION/$PROJECT_ID/$GAR_REPO/${{ matrix.service }}:${{ steps.vars.outputs.sha_short }}|" "$FILE"
+          else
+            echo "No deployment file for ${{ matrix.service }}, skipping update"
+          fi
+
+      - name: Commit updated deployment.yaml
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add release/kubernetes-manifests/${{ matrix.service }}-deployment.yaml || true
+          git commit -m "Update ${{ matrix.service }} image tag to ${{ steps.vars.outputs.sha_short }}" || echo "No changes to commit"
+          git push || echo "Nothing to push"
+
