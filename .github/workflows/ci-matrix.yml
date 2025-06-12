@@ -87,10 +87,14 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          git pull --rebase origin main
-
           git add ${{ env.DEPLOYMENT_FILE }} || true
-          git diff --cached --quiet && echo "No changes to commit" || (
+
+          # Only pull if there is something staged to avoid rebase error
+          if ! git diff --cached --quiet; then
+            echo "Changes detected, rebasing with remote main..."
+            git pull --rebase origin main
             git commit -m "Update image for ${{ matrix.service }} to ${{ steps.vars.outputs.sha_short }}"
             git push
-          )
+          else
+            echo "No changes to commit"
+          fi
