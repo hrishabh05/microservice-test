@@ -82,20 +82,32 @@ jobs:
       #       git commit -m "Update image for ${{ matrix.service }} to ${{ steps.vars.outputs.sha_short }}"
       #       git push
       #     )
-      - name: Commit updated deployment file
+      - name: Commit updated deployment file and push safely
         run: |
+          set -e  # Stop on error
+
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
           git add ${{ env.DEPLOYMENT_FILE }} || true
 
-          # Check if there are any changes to commit
+          # Check if there's anything to commit
           if git diff --cached --quiet; then
-            echo "No changes to commit"
-          else
-            echo "Changes detected — committing before rebase"
-            git commit -m "Update image for ${{ matrix.service }} to ${{ steps.vars.outputs.sha_short }}"
-            git pull --rebase origin main
-            git push
+            echo "✅ No changes to commit."
+            exit 0
           fi
+
+          echo "🔧 Committing changes..."
+          git commit -m "Update image for ${{ matrix.service }} to ${{ steps.vars.outputs.sha_short }}"
+
+          echo "🔄 Rebasing on latest main..."
+          git pull --rebase origin main
+
+          echo "🚀 Pushing to main..."
+          if ! git push; then
+            echo "⚠️ First push failed, retrying rebase and push..."
+            git pull --rebase origin main
+            git push || (echo "❌ Push failed again. Aborting." && exit 1)
+          fi
+
 
