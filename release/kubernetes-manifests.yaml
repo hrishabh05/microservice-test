@@ -484,7 +484,7 @@ spec:
               - ALL
           privileged: false
           readOnlyRootFilesystem: true
-        image: asia-east1-docker.pkg.dev/rs-0123/kyoskdemo/productcatalogservice:816bfe1
+        image: asia-east1-docker.pkg.dev/rs-0123/kyoskdemo/productcatalogservice:a041ca3
         ports:
         - containerPort: 3550
         env:
