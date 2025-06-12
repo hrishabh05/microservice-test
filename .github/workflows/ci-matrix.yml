@@ -89,12 +89,13 @@ jobs:
 
           git add ${{ env.DEPLOYMENT_FILE }} || true
 
-          # Only pull if there is something staged to avoid rebase error
-          if ! git diff --cached --quiet; then
-            echo "Changes detected, rebasing with remote main..."
-            git pull --rebase origin main
-            git commit -m "Update image for ${{ matrix.service }} to ${{ steps.vars.outputs.sha_short }}"
-            git push
-          else
+          # Check if there are any changes to commit
+          if git diff --cached --quiet; then
             echo "No changes to commit"
+          else
+            echo "Changes detected — committing before rebase"
+            git commit -m "Update image for ${{ matrix.service }} to ${{ steps.vars.outputs.sha_short }}"
+            git pull --rebase origin main
+            git push
           fi
+
