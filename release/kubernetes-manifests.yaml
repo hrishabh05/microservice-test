@@ -735,7 +735,7 @@ spec:
               - ALL
           privileged: false
           readOnlyRootFilesystem: true
-        image: asia-east1-docker.pkg.dev/rs-0123/kyoskdemo/loadgenerator:033fd87
+        image: asia-east1-docker.pkg.dev/rs-0123/kyoskdemo/loadgenerator:816bfe1
         env:
         - name: FRONTEND_ADDR
           value: "frontend:80"
