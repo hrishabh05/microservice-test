@@ -206,7 +206,7 @@ spec:
               - ALL
           privileged: false
           readOnlyRootFilesystem: true
-        image: us-central1-docker.pkg.dev/google-samples/microservices-demo/recommendationservice:v0.10.3
+        image: asia-east1-docker.pkg.dev/rs-0123/kyoskdemo/recommendationservice:816bfe1
         ports:
         - containerPort: 8080
         readinessProbe:
