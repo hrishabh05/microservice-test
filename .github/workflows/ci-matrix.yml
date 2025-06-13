@@ -1,110 +1,56 @@
-name: CI - Build Changed Services and Update Deployment
+name: CI for Helm-based Deployment
 
 on:
   push:
     branches:
       - main
 
-permissions:
-  contents: write
-
-env:
-  GAR_LOCATION: asia-east1-docker.pkg.dev
-  PROJECT_ID: rs-0123
-  GAR_REPO: kyoskdemo
-  DEPLOYMENT_FILE: release/kubernetes-manifests.yaml
-
 jobs:
-  detect-changes:
-    runs-on: ubuntu-latest
-    outputs:
-      changed: ${{ steps.set.outputs.changed }}
-      has_changes: ${{ steps.set.outputs.has_changes }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-
-      - name: Detect changed services
-        id: set
-        run: |
-          echo "🔍 Detecting changes between HEAD^ and HEAD"
-          CHANGED=$(git diff --name-only HEAD^ HEAD | grep '^src/' | cut -d'/' -f2 | sort -u | uniq)
-
-          if [ -z "$CHANGED" ]; then
-            echo "✅ No changed services"
-            echo "changed=[]" >> $GITHUB_OUTPUT
-            echo "has_changes=false" >> $GITHUB_OUTPUT
-          else
-            # Convert list to compact JSON
-            JSON=$(echo "$CHANGED" | jq -R . | jq -s -c .)
-            echo "Detected services: $JSON"
-            echo "changed=$JSON" >> $GITHUB_OUTPUT
-            echo "has_changes=true" >> $GITHUB_OUTPUT
-          fi
-
-
   build-and-deploy:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service: ${{ fromJson(needs.detect-changes.outputs.changed) }}
+
+    env:
+      IMAGE_NAME: microservice-test
+      PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GAR_LOCATION: asia-south1-docker.pkg.dev
+      REPO_NAME: microservice-repo
+      HELM_CHART_DIR: ./helm-chart
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v2
 
       - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v1
+        uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
 
-      - name: Set up Google Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: ${{ env.PROJECT_ID }}
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ env.GAR_LOCATION }}
 
-      - name: Configure Docker for GAR
-        run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}
-
-      - name: Get short SHA
+      - name: Set Image Tag
         id: vars
-        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        run: echo "TAG=$(date +%Y%m%d%H%M%S)" >> $GITHUB_ENV
 
-      - name: Build and push Docker image
+      - name: Build and Push Docker Image
         run: |
-          SERVICE=${{ matrix.service }}
-          docker build -t $GAR_LOCATION/$PROJECT_ID/$GAR_REPO/$SERVICE:${{ steps.vars.outputs.sha_short }} ./src/$SERVICE
-          docker push $GAR_LOCATION/$PROJECT_ID/$GAR_REPO/$SERVICE:${{ steps.vars.outputs.sha_short }}
+          docker build -t $GAR_LOCATION/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:$TAG .
+          docker push $GAR_LOCATION/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:$TAG
 
-      - name: Update image in shared deployment YAML
+      - name: Update Helm chart with new image tag
         run: |
-          SERVICE=${{ matrix.service }}
-          IMAGE="$GAR_LOCATION/$PROJECT_ID/$GAR_REPO/$SERVICE:${{ steps.vars.outputs.sha_short }}"
-          FILE=${{ env.DEPLOYMENT_FILE }}
+          sed -i "s|tag: .*|tag: \"$TAG\"|" $HELM_CHART_DIR/values.yaml
+          sed -i "s|repository: .*|repository: \"$GAR_LOCATION/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME\"|" $HELM_CHART_DIR/values.yaml
 
-          if grep -q "$SERVICE" "$FILE"; then
-            echo "Updating image for $SERVICE..."
-            sed -i "s|image: .*${SERVICE}:.*|image: $IMAGE|" "$FILE"
-          else
-            echo "No image line for $SERVICE found in $FILE — skipping"
-          fi
-
-      - name: Commit updated deployment file and push safely
+      - name: Commit and push Helm chart update
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "ci@github.com"
+          git config user.name "CI Bot"
+          git add $HELM_CHART_DIR/values.yaml
+          git commit -m "ci: update image tag to $TAG"
+          git push origin main
 
-          git add ${{ env.DEPLOYMENT_FILE }} || true
-
-          if git diff --cached --quiet; then
-            echo "✅ No changes to commit."
-            exit 0
-          fi
-
-          git commit -m "Update image for ${{ matrix.service }} to ${{ steps.vars.outputs.sha_short }}"
-          git pull --rebase origin main
-          git push || (git pull --rebase origin main && git push || (echo "❌ Push failed again." && exit 1))
