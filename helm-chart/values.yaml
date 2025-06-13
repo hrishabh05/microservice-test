@@ -17,7 +17,7 @@
 # Declare variables to be passed into your templates.
 
 images:
-  repository: asia-south1-docker.pkg.dev/rs-0123/kyoskdemo/
+  repository: asia-east1-docker.pkg.dev/rs-0123/kyoskdemo/
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
 
