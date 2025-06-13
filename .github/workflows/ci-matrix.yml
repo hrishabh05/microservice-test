@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      GAR_LOCATION: asia-south1-docker.pkg.dev
+      GAR_LOCATION: asia-east1-docker.pkg.dev
       PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       REPO_NAME: microservice-repo
       HELM_CHART_DIR: ./helm-chart
