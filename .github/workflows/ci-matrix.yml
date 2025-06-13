@@ -29,19 +29,21 @@ jobs:
       - name: Detect changed services
         id: set
         run: |
-          echo "🔍 Detecting changes between current and previous commit..."
+          echo "🔍 Detecting changes between HEAD^ and HEAD"
           CHANGED=$(git diff --name-only HEAD^ HEAD | grep '^src/' | cut -d'/' -f2 | sort -u | uniq)
 
           if [ -z "$CHANGED" ]; then
-            echo "✅ No changed services detected"
-            echo 'changed=[]' >> $GITHUB_OUTPUT
-            echo 'has_changes=false' >> $GITHUB_OUTPUT
+            echo "✅ No changed services"
+            echo "changed=[]" >> $GITHUB_OUTPUT
+            echo "has_changes=false" >> $GITHUB_OUTPUT
           else
-            JSON=$(echo "$CHANGED" | jq -R . | jq -s .)
+            # Convert list to compact JSON
+            JSON=$(echo "$CHANGED" | jq -R . | jq -s -c .)
             echo "Detected services: $JSON"
             echo "changed=$JSON" >> $GITHUB_OUTPUT
-            echo 'has_changes=true' >> $GITHUB_OUTPUT
+            echo "has_changes=true" >> $GITHUB_OUTPUT
           fi
+
 
   build-and-deploy:
     needs: detect-changes
