@@ -29,11 +29,9 @@ jobs:
       - name: Detect changed services
         id: set
         run: |
-          echo "🔍 Detecting changes compared to origin/main..."
-          git fetch origin main
+          echo "🔍 Detecting changes between current and previous commit..."
+          CHANGED=$(git diff --name-only HEAD^ HEAD | grep '^src/' | cut -d'/' -f2 | sort -u | uniq)
 
-          CHANGED=$(git diff --name-only origin/main | grep '^src/' | cut -d'/' -f2 | sort -u | uniq)
-          
           if [ -z "$CHANGED" ]; then
             echo "✅ No changed services detected"
             echo 'changed=[]' >> $GITHUB_OUTPUT
