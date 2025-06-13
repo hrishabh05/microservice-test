@@ -27,20 +27,17 @@ jobs:
         id: set-changes
         run: |
           echo "🔍 Checking for changed services..."
-
-          # Get list of changed service folders
-          CHANGED=$(git diff --name-only origin/main | grep '^src/' | cut -d'/' -f2 | sort -u | tr '\n' ',' | sed 's/,$//')
-
-          echo "changed=$CHANGED"
+          CHANGED=$(git diff --name-only origin/main | grep '^src/' | cut -d'/' -f2 | sort -u | jq -R . | jq -s .)
+          echo "Changed services: $CHANGED"
           echo "changed=$CHANGED" >> $GITHUB_OUTPUT
 
   build-and-deploy:
     needs: detect-changes
-    if: needs.detect-changes.outputs.changed != ''
+    if: needs.detect-changes.outputs.changed_services != '[]'
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [${{ fromJson('["' + needs.detect-changes.outputs.changed + '"]') }}]
+        service: ${{ fromJson(needs.detect-changes.outputs.changed_services) }}
 
     steps:
       - name: Checkout code
