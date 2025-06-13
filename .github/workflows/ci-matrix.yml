@@ -1,4 +1,4 @@
-name: CI - Build All Services and Update Deployment
+name: CI - Build Changed Services and Update Deployment
 
 on:
   push:
@@ -15,21 +15,32 @@ env:
   DEPLOYMENT_FILE: release/kubernetes-manifests.yaml
 
 jobs:
-  build-push-update:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      changed_services: ${{ steps.set-changes.outputs.changed }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Detect changed services
+        id: set-changes
+        run: |
+          echo "🔍 Checking for changed services..."
+
+          # Get list of changed service folders
+          CHANGED=$(git diff --name-only origin/main | grep '^src/' | cut -d'/' -f2 | sort -u | tr '\n' ',' | sed 's/,$//')
+
+          echo "changed=$CHANGED"
+          echo "changed=$CHANGED" >> $GITHUB_OUTPUT
+
+  build-and-deploy:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.changed != ''
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service:
-          - adservice
-          - checkoutservice
-          - currencyservice
-          - emailservice
-          - frontend
-          - loadgenerator
-          - paymentservice
-          - productcatalogservice
-          - recommendationservice
-          - shippingservice
+        service: [${{ fromJson('["' + needs.detect-changes.outputs.changed + '"]') }}]
 
     steps:
       - name: Checkout code
@@ -72,42 +83,18 @@ jobs:
             echo "No image line for $SERVICE found in $FILE — skipping"
           fi
 
-      # - name: Commit updated deployment file
-      #   run: |
-      #     git config --global user.name "github-actions[bot]"
-      #     git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-      #     git add ${{ env.DEPLOYMENT_FILE }} || true
-      #     git diff --cached --quiet && echo "No changes to commit" || (
-      #       git commit -m "Update image for ${{ matrix.service }} to ${{ steps.vars.outputs.sha_short }}"
-      #       git push
-      #     )
       - name: Commit updated deployment file and push safely
         run: |
-          set -e  # Stop on error
-
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
           git add ${{ env.DEPLOYMENT_FILE }} || true
 
-          # Check if there's anything to commit
           if git diff --cached --quiet; then
             echo "✅ No changes to commit."
             exit 0
           fi
 
-          echo "🔧 Committing changes..."
           git commit -m "Update image for ${{ matrix.service }} to ${{ steps.vars.outputs.sha_short }}"
-
-          echo "🔄 Rebasing on latest main..."
           git pull --rebase origin main
-
-          echo "🚀 Pushing to main..."
-          if ! git push; then
-            echo "⚠️ First push failed, retrying rebase and push..."
-            git pull --rebase origin main
-            git push || (echo "❌ Push failed again. Aborting." && exit 1)
-          fi
-
-
+          git push || (git pull --rebase origin main && git push || (echo "❌ Push failed again." && exit 1))
