@@ -284,7 +284,7 @@ spec:
                 - ALL
             privileged: false
             readOnlyRootFilesystem: true
-          image: asia-east1-docker.pkg.dev/rs-0123/kyoskdemo/frontend:a041ca3
+          image: asia-east1-docker.pkg.dev/rs-0123/kyoskdemo/frontend:1359c17
           ports:
           - containerPort: 8080
           readinessProbe:
