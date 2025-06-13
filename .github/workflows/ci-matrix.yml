@@ -1,4 +1,4 @@
-name: CI for Helm-based Deployment
+name: CI for Multi-Service Helm Deployment
 
 on:
   push:
@@ -6,13 +6,12 @@ on:
       - main
 
 jobs:
-  build-and-deploy:
+  detect-and-build:
     runs-on: ubuntu-latest
 
     env:
-      IMAGE_NAME: microservice-test
-      PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       GAR_LOCATION: asia-south1-docker.pkg.dev
+      PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       REPO_NAME: microservice-repo
       HELM_CHART_DIR: ./helm-chart
 
@@ -29,28 +28,37 @@ jobs:
           credentials_json: '${{ secrets.GCP_SA_KEY }}'
 
       - name: Configure Docker for Artifact Registry
-        run: |
-          gcloud auth configure-docker ${{ env.GAR_LOCATION }}
+        run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}
 
-      - name: Set Image Tag
-        id: vars
+      - name: Get list of changed services
+        id: changed
+        run: |
+          echo "🔍 Detecting changes compared to origin/main..."
+          git fetch origin main
+          CHANGED_SERVICES=$(git diff --name-only origin/main | grep '^src/' | cut -d/ -f2 | sort -u | tr '\n' ' ')
+          echo "services=$CHANGED_SERVICES" >> $GITHUB_OUTPUT
+
+      - name: Set image tag
         run: echo "TAG=$(date +%Y%m%d%H%M%S)" >> $GITHUB_ENV
 
-      - name: Build and Push Docker Image
+      - name: Build and push Docker images
+        if: steps.changed.outputs.services != ''
         run: |
-          docker build -t $GAR_LOCATION/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:$TAG .
-          docker push $GAR_LOCATION/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:$TAG
+          for service in ${{ steps.changed.outputs.services }}; do
+            echo "🔧 Building and pushing $service"
+            docker build -t $GAR_LOCATION/$PROJECT_ID/$REPO_NAME/$service:$TAG -f ./src/$service/Dockerfile ./src/$service
+            docker push $GAR_LOCATION/$PROJECT_ID/$REPO_NAME/$service:$TAG
 
-      - name: Update Helm chart with new image tag
-        run: |
-          sed -i "s|tag: .*|tag: \"$TAG\"|" $HELM_CHART_DIR/values.yaml
-          sed -i "s|repository: .*|repository: \"$GAR_LOCATION/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME\"|" $HELM_CHART_DIR/values.yaml
+            # Update image in values.yaml (must match your Helm structure)
+            yq eval ".${service}.image.repository = \"$GAR_LOCATION/$PROJECT_ID/$REPO_NAME/$service\"" -i $HELM_CHART_DIR/values.yaml
+            yq eval ".${service}.image.tag = \"$TAG\"" -i $HELM_CHART_DIR/values.yaml
+          done
 
-      - name: Commit and push Helm chart update
+      - name: Commit and push updated Helm chart
+        if: steps.changed.outputs.services != ''
         run: |
           git config user.email "ci@github.com"
           git config user.name "CI Bot"
           git add $HELM_CHART_DIR/values.yaml
-          git commit -m "ci: update image tag to $TAG"
+          git commit -m "ci: update image tags for changed services"
           git push origin main
-
